@@ -1,0 +1,170 @@
+library(shiny)
+library(dplyr)
+library(ggplot2)
+library(geobr)
+library(shinydashboard)
+library(plotly)
+
+# Puxando os nomes dos municípios e seus códigos
+muni = read_municipality(year = 2021,
+                         showProgress = FALSE)
+
+munis = sort(unique(muni$name_muni))
+
+# Criando uma função para puxar dados do município de interesse
+dados_muni = function(geocode){
+  
+  url = "https://info.dengue.mat.br/api/alertcity?"
+  disease = "dengue"
+  format = "csv"
+  ew_start = 1
+  ew_end = 52
+  ey_start = 2021
+  ey_end = 2021
+  
+  cons1 = paste0(url,"geocode=",geocode,"&disease=",disease,"&format=",format,"&ew_start=",ew_start,"&ew_end=",ew_end,"&ey_start=",ey_start,"&ey_end=",ey_end)
+  
+  dados = read.csv(cons1) %>% arrange(data_iniSE)
+  
+  return(dados)
+  
+}
+
+# Criando a interface do usuário como um dashboard
+ui <- dashboardPage(
+  
+  # Criando e definindo o título do dashboard
+  dashboardHeader(title = 'Monitorito'),
+  
+  # Criando a side bar para o usuário transitar entre as páginas
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Acompanhamento", tabName = "acomp", icon = icon("chart-bar")),
+      menuItem("Como o aplicativo funciona?", tabName = "info", icon = icon("chart-bar"))
+    )
+  ),
+  
+  # Criando o corpo do dashboard
+  dashboardBody(
+    
+    # Criando os itens do corpo do dashboard
+    tabItems(
+      
+      # Criando a aba de acompanhamento por município
+      tabItem(tabName = "acomp",
+              
+              # CRiando uma linha para os selecionadores e os indicadores
+              fluidRow(
+                
+                # Criando o selecionador de municípios
+                box(width = 2,
+                    selectInput(inputId = "sele_muni1", label = "Selecione o município", 
+                                choices = munis, 
+                                selected = munis[1])),
+                
+                # Criando um indicador de número de casos
+                valueBoxOutput(width = 4, outputId = "n_casos1"),
+                
+                valueBoxOutput(width = 4, outputId = "n_casos2"),
+                
+                # Criando o selecionador de municípios para comparação
+                box(width = 2,
+                    selectInput(inputId = "sele_muni2", label = "Selecione o município para comparar", 
+                                choices = munis, 
+                                selected = munis[95]))),
+                
+              # Criando uma linha para os gráficos
+              fluidRow(
+                box(plotlyOutput(outputId = "casosPlot1")),
+                box(plotlyOutput(outputId = "casosPlot2"))
+              )),
+              
+      # Criando uma aba para as informações do app
+      tabItem(tabName = 'info', "A criação deste aplicativo tem como motivação a monitoração dos casos de dengue nos municípios brasileiros, ao utilizar esse app os usuários conseguem selecionar os municípios de interesse e assim visualizarem tanto o número de casos de dengue registrados ao longo do tempo quanto comparações entre diferentes municípios. \n
+O app organizado como um dashboard, na aba 'Acompanhamento', o usuário pode selecionar dois municípios para análise e comparação, são gerados gráficos de linhas interativos que exibem a evolução dos casos de dengue ao longo do tempo para os municípios selecionados.\n
+Exemplos de perguntas que podem ser respondidas com o app:  \n\n
+(1)Qual foi o número total de casos de dengue em um determinado município durante o ano de 2021?\n
+(2)Como os casos de dengue evoluíram ao longo do tempo em um município específico?\n
+(3) Qual município apresentou maior incidência de casos de dengue em 2021? \n
+(4) Quais períodos do ano tiveram mais casos de dengue?"))
+)# fim-do-body
+)# fim-da-ui
+
+
+# Criando o servidor
+server <- function(input, output) {
+  
+  # CRiando uma função para plotar o gráfico 1
+  output$casosPlot1 <- renderPlotly({
+    
+    # Encontrando o codigo do município a partir do código
+    cod1 = muni$code_muni[muni$name_muni == input$sele_muni1]
+    
+    # Puxando os dados para o município em questão
+    dados1 = dados_muni(cod1)
+  
+    # Plotando os casos em série temporal
+    ggplot(dados1, aes(x = data_iniSE, y = casos)) +
+      geom_line(col='blue') +
+      geom_point(col='blue') +
+      labs(title = paste("Casos de Dengue em", input$sele_muni1),
+           x = "Data",
+           y = "Número de Casos de Dengue") +
+      theme_minimal()
+  })
+  
+  # Criando uma função para plotar o segundo gráfico
+  output$casosPlot2 <- renderPlotly({
+    
+    # Encontrando o codigo do município a partir do código
+    cod2 = muni$code_muni[muni$name_muni == input$sele_muni2]
+    
+    # Puxando os dados do mnicípio em questão
+    dados2 = dados_muni(cod2)
+    
+    # Plotando os casos em série temporal
+    ggplot(dados2, aes(x = data_iniSE, y = casos)) +
+      geom_line(col='purple') +
+      geom_point(col='purple') +
+      labs(title = paste("Comparando com", input$sele_muni2),
+           x = "Data",
+           y = "Número de Casos de Dengue") +
+      theme_minimal()
+  })
+  
+  # Criando um indicador de casos observados pra o município 1
+  output$n_casos1 <- renderValueBox({
+    
+    # Encontrando o codigo do município a partir do código
+    cod1 = muni$code_muni[muni$name_muni == input$sele_muni1]
+    
+    # Puxando os dados do mnicípio em questão
+    dados1 = dados_muni(cod1)
+    
+    # Criando o indicador
+    valueBox(
+      sum(dados1$casos), "Total de Casos de Dengue Observados", icon = icon("list"),
+      color = "blue"
+    )
+  })
+  
+  # Criando um indicador de casos observados pra o município 1
+  output$n_casos2 <- renderValueBox({
+    
+    # Encontrando o codigo do município a partir do código
+    cod2 = muni$code_muni[muni$name_muni == input$sele_muni2]
+    
+    # Puxando os dados do mnicípio em questão
+    dados2 = dados_muni(cod2)
+    
+    # Criando o indicador
+    valueBox(
+      sum(dados2$casos), "Total de Casos de Dengue Observados", icon = icon("list"),
+      color = "purple"
+    )
+  })
+  
+}
+
+# Executando o aplicativo
+shinyApp(ui = ui, server = server)
